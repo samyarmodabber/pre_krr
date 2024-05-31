@@ -2,6 +2,8 @@
 
 ## Download Datasets
 
+Run the following block in example01:
+
 ```py
 from data_downloader import download_dataset
 # URL of the SUSY dataset
