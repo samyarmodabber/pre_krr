@@ -19,8 +19,8 @@ class PKRR:
         The regularization parameter.
     kernel : str, default="gaussian"
         The kernel function.
-    sigma : float, default=1.0
-         Sigma parameter for the Gaussian kernel.
+    gamma : float, default=1.0
+         gamma parameter for the Gaussian kernel.
     rank : int, default=200
         The desired rank of the preconditioner.
     pre: str, default=rpc (Random Pivote Cholesky)
@@ -39,7 +39,7 @@ class PKRR:
     Examples
     --------
     >>> from pkrr import PKRR
-    >>> model1 = PKRR(mu=.5, rank=10, sigma=0.1, gamma=.03, prec="rpc")
+    >>> model1 = PKRR(mu=.5, rank=10, gamma=.5, prec="rpc")
     >>> model1.fit(X_train=X_train, y_train=y_train, max_iter=100)
     >>> print(model1.report)
     >>> y_predict_1 = model1.predict(X_test)
@@ -47,14 +47,14 @@ class PKRR:
     >>> f"Correct: {sum(y_test==y_predict_1 )} , Incorrect: {sum(y_test!=y_predict_1)}")
     """
 
-    def __init__(self, mu=0.1, kernel="gaussian", gamma=1., sigma=1., prec=None, rank=200, tolerence=1e-3):
+    def __init__(self, mu=0.1, kernel="gaussian", gamma=1., prec=None, rank=200, tolerence=1e-3):
 
         self.mu = mu
         self.kernel = kernel
         self.gamma = gamma  # for kernel bandwidth
         self.K = None
         self.K_reg = None
-        self.sigma = sigma  # for rff
+        self.mu_I = None
 
         # self.k = None
         self.rank = rank  # For low-rank approximation
@@ -143,7 +143,8 @@ class PKRR:
 
         # Find Kernel and Regularize kernel: K+mu*I
         self.K = self.kernel_matrix()
-        self.K_reg = self.K+self.mu*np.eye(self.N)
+        self.mu_I = self.mu*np.eye(self.N)
+        self.K_reg = self.K + self.mu_I
 
         #####################
         # PRECONDITIONING
@@ -151,14 +152,14 @@ class PKRR:
         if self.prec == "greedy":
             # GREEDY-BASED PIVOTED CHOLESKY APPROACH
             F, S, rows = greedy(self.K, self.rank)
-            self.Preconditioner = WB_Identity(self.K_reg, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
 
         ########################
         elif self.prec == "rpc":
             # RANDOMIZED PIVOTED CHOLESKY APPROACH:
             # Factor matrix
             F, S, rows = rpcholesky(self.K, self.rank)
-            
+
             # Paper: Robust, randomized preconditioning for kernel ridge regression
             # Perform Economy Size SVD
             # U, D, Vt = sp.linalg.svd(F, full_matrices=False)
@@ -170,14 +171,14 @@ class PKRR:
             # self.Preconditioner = U@(inv-i/mu)@U.T+I/mu
 
             # Woodbury Identity
-            self.Preconditioner = WB_Identity(self.K_reg, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
 
         ###########################
         elif self.prec == "nystrom":
             # Nyström APPROACH
             # setup Nyström decomposition
             F, D = nystrom(self.K, self.rank)
-            self.Preconditioner = WB_Identity(self.K_reg, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
 
             # i = np.eye(D.shape[0])
             # I = np.eye(U.shape[0])
@@ -190,8 +191,8 @@ class PKRR:
         # preconditioning with random fourier features
         elif self.prec == "rff":
             # RANDOM FOURIER FEATURES APPROACH
-            F, W, b = rff(self.K, self.rank, self.sigma)
-            self.Preconditioner = WB_Identity(self.K_reg, F, F.T, self.rank)
+            F, W, b = rff(self.X_train, self.rank, self.gamma)
+            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
 
         ######################
         # without preconditioning - vanilla CG method
@@ -214,7 +215,7 @@ class PKRR:
         self.residuals = residuals
 
         method = "without precondition" if self.prec == None else self.prec
-        self.report= f"Training is done in {residuals.shape[0]} iteration with CG-method. Precondition: {method}"
+        self.report = f"Training is done in {residuals.shape[0]} iteration with CG-method. Precondition: {method}"
 
     ##############################################################################
 

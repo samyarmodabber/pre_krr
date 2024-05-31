@@ -1,2 +1,3 @@
 src/tucmath/data/*
 .DS_Store
+src/tucmath/test-cg.ipynb

@@ -104,7 +104,7 @@ def nystrom(K, rank):
     return U, Lamda
 
 
-def rff(X, rank, sigma):
+def rffT(X, rank, sigma):
     """Return random Fourier features based on data X, as well as random variables W and b.
     """
     N, d = X.shape
@@ -116,6 +116,34 @@ def rff(X, rank, sigma):
     Z = norm * np.sqrt(2) * np.cos(sigma * W @ X.T + B)
 
     return Z.T, W.T, b
+
+
+def rff(X, rank, gamma):
+    """
+    Random Fourier Features (RFF) approximation for RBF kernel.
+
+    Parameters:
+    X (np.ndarray): Input data matrix of shape (n_samples, n_features).
+    rank (int): Number of random Fourier features.
+    gamma (float): Parameter for the RBF kernel.
+
+    Returns:
+    np.ndarray: Approximated feature map of shape (n_samples, D).
+    np.ndarray: W.
+    np.ndarray: b.
+    """
+    N, d = X.shape
+
+    # Generate random weights from a normal distribution
+    W = np.random.normal(0, np.sqrt(2 * gamma), (d, rank))
+
+    # Generate random bias from a uniform distribution
+    b = np.random.uniform(0, 2 * np.pi, rank)
+
+    # Compute the random Fourier features
+    Z = np.sqrt(2 / rank) * np.cos(X.dot(W) + b)
+
+    return Z, W, b
 
 #################################################################################
 ################################# Helper Function ###############################
