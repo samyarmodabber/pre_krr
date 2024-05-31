@@ -38,16 +38,13 @@ class PKRR:
 
     Examples
     --------
-    >>> import numpy as np
-    >>> from sklearn.model_selection import train_test_split
-    >>> N, d = 25000, 15
-    >>> rng = np.random.RandomState(0)
-    >>> X = rng.randn(N, d)
-    >>> y = np.sign(rng.randn(N))
-    >>> X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.5, random_state=42)
-    >>> clf = NFFTSVMipm
-    >>> clf.fit(X_train, y_train)
-    >>> clf.predict(X_test)
+    >>> from pkrr import PKRR
+    >>> model1 = PKRR(mu=.5, rank=10, sigma=0.1, gamma=.03, prec="rpc")
+    >>> model1.fit(X_train=X_train, y_train=y_train, max_iter=100)
+    >>> print(model1.report)
+    >>> y_predict_1 = model1.predict(X_test)
+    >>> print(
+    >>> f"Correct: {sum(y_test==y_predict_1 )} , Incorrect: {sum(y_test!=y_predict_1)}")
     """
 
     def __init__(self, mu=0.1, kernel="gaussian", gamma=1., sigma=1., prec=None, rank=200, tolerence=1e-3):
