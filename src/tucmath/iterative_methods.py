@@ -22,15 +22,10 @@ def CG(A, b, P_inv=None, matvec=None, tol=1e-5, x0=None, max_iter=None):
 
     if max_iter is None:
         max_iter = N
-    # if matvec is None:
-    #     def mat_vec(A, u): return A@u
-    #     matvec = mat_vec
 
     def matvec(M, u):
         return M@u
 
-    # def norm2(u):
-    #     return np.linalg.norm(u)
 
     x = np.zeros(N) if x0 == None else x0
     r = b - matvec(A, x) if x.any() else b.copy()
@@ -42,10 +37,6 @@ def CG(A, b, P_inv=None, matvec=None, tol=1e-5, x0=None, max_iter=None):
     else:
         method = "pcg"
         z = matvec(P_inv, r)
-
-    print("A shape", A.shape)
-    print("b shape", b.shape)
-    print("r shape", r.shape)
 
     # Main Loop
     i = 0

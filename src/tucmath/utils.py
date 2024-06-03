@@ -2,6 +2,18 @@ from scipy.sparse.linalg import cg
 import numpy as np
 
 
+def diag_inv(M):
+    """
+    Get a 2d diagonal matrix or diagonal vector of a matrix as a vector 
+    and return invers of matrix in 2dim.
+    """
+
+    if M.ndim == 1:
+        d = 1./M
+    elif M.ndim == 2:
+        d = 1./np.diag(M)
+    return np.diag(d)
+
 def WB_Identity(A, U, V, k):
     '''
     Computes the Woodbury identity for find inverse of matrix A + UV^T where A is a diagonal matrix.
