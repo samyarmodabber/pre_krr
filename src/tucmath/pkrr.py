@@ -3,10 +3,11 @@ import pandas as pd
 import random
 import time
 import scipy as sp
-from utils import cg_iterations, WB_Identity, kernel
+from utils import cg_iterations, WB_Identity, kernel, diag_inv
 from sklearn.metrics.pairwise import rbf_kernel
 from low_rank_methods import rpcholesky, greedy, nystrom, rff
 from scipy.sparse.linalg import cg
+from copy import copy
 
 
 class PKRR:
@@ -52,26 +53,24 @@ class PKRR:
         self.mu = mu
         self.kernel = kernel
         self.gamma = gamma  # for kernel bandwidth
+        self.rank = rank  # For low-rank approximation
+        self.prec = prec  # precnditioner Name
+        self.tolerence = tolerence
+
         self.K = None
         self.K_reg = None
         self.mu_I = None
-
-        # self.k = None
-        self.rank = rank  # For low-rank approximation
-
         # self.I_k = np.eye(rank)
         # self.C = self.I_k
         # self.N = None
         # self.U = None
 
         # For precnditioner
-        self.prec = prec  # Name
         self.Preconditioner = None  # M: Matrix
 
         # For CG method
         self.solution = None
         self.residuals = None
-        self.tolerence = tolerence
         self.report = ""
 
         # For predict
@@ -119,7 +118,7 @@ class PKRR:
 
     ##############################################################################
 
-    def fit(self, X_train, y_train, max_iter=None):
+    def fit(self, X_train, y_train, maxiter=None):
         """
         Perform the KRR for training the SVM on the train data.
 
@@ -139,12 +138,12 @@ class PKRR:
             Number of GMRES iterations within the interior points iterations.
         """
         self.X_train = X_train
-        self.N = X_train.shape[0]
+        N, d = X_train.shape
+        I = np.eye(N)
 
         # Find Kernel and Regularize kernel: K+mu*I
         self.K = self.kernel_matrix()
-        self.mu_I = self.mu*np.eye(self.N)
-        self.K_reg = self.K + self.mu_I
+        self.K_reg = self.K + self.mu*I
 
         #####################
         # PRECONDITIONING
@@ -152,7 +151,7 @@ class PKRR:
         if self.prec == "greedy":
             # GREEDY-BASED PIVOTED CHOLESKY APPROACH
             F, S, rows = greedy(self.K, self.rank)
-            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
 
         ########################
         elif self.prec == "rpc":
@@ -171,28 +170,28 @@ class PKRR:
             # self.Preconditioner = U@(inv-i/mu)@U.T+I/mu
 
             # Woodbury Identity
-            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
 
         ###########################
         elif self.prec == "nystrom":
             # Nyström APPROACH
             # setup Nyström decomposition
-            F, D = nystrom(self.K, self.rank)
-            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
+            U, D = nystrom(self.K, self.rank)
+            mu = copy(self.mu)
+            B = diag_inv(D+mu)
+            lambda_l = D[-1, -1]  # the largest eig in diagonal matrix
+            # P_nys = U@(D+mu)@U.T/(lambda_l+mu)+I-U@U.T
+            P_nys_inv = (lambda_l+mu)*U@B@U.T+I-U@U.T
+            self.Preconditioner = P_nys_inv
 
-            # i = np.eye(D.shape[0])
-            # I = np.eye(U.shape[0])
-            # lamda_r = D[-1, -1]
-            # self.Preconditioner = (self.mu+lamda_r)*U@(D+self.mu*i)@U.T+I-U@U.T #Paper
-
-            # self.Preconditioner = WB_Identity(U, self.mu)
+            # self.Preconditioner = WB_Identity(self.mu*I, U, U.T, self.rank)
 
         ######################
         # preconditioning with random fourier features
         elif self.prec == "rff":
             # RANDOM FOURIER FEATURES APPROACH
             F, W, b = rff(self.X_train, self.rank, self.gamma)
-            self.Preconditioner = WB_Identity(self.mu_I, F, F.T, self.rank)
+            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
 
         ######################
         # without preconditioning - vanilla CG method
@@ -204,18 +203,24 @@ class PKRR:
             raise ValueError(
                 'Select precondition method from "rpc","greedy","rff", or "nystrom"')
 
-        # if self.prec != None:
-        #     print(f"Condition number after apply {self.prec} (P@A):",
-        #           np.linalg.cond(self.Preconditioner@K_reg))
+        residuals = []
 
-        solution, residuals = cg_iterations(self.K_reg, y_train, M=self.Preconditioner,
-                                            tol=self.tolerence)
+        A = copy(self.K_reg)
+        b = copy(y_train)
+        M = copy(self.Preconditioner)
+        tol = copy(self.tolerence)
+
+        def callback(x): return residuals.append(
+            np.linalg.norm(A @ x - b) / np.linalg.norm(b))
+
+        solution, info = cg(A, b, M=M, tol=tol,
+                            callback=callback, maxiter=maxiter)
 
         self.solution = solution
-        self.residuals = residuals
+        self.residuals = np.array(residuals)
 
         method = "without precondition" if self.prec == None else self.prec
-        self.report = f"Training is done in {residuals.shape[0]} iteration with CG-method. Precondition: {method}"
+        self.report = f"Training is done in {len(residuals)} iteration with CG-method. Precondition: {method}"
 
     ##############################################################################
 
@@ -229,10 +234,10 @@ class PKRR:
 
         Returns
         -------
-        yhat_fast : ndarray : The predicted class affiliations for the test data.
+        yhat : ndarray : The predicted class affiliations for the test data.
         """
-        M = kernel(rbf_kernel, self.X_train, x, gamma=self.gamma)
-        predict0 = self.solution @ M
+        MM = kernel(rbf_kernel, self.X_train, x, gamma=self.gamma)
+        predict0 = self.solution @ MM
 
         predict = np.sign(predict0)
         return predict
