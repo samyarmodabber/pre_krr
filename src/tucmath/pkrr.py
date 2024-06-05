@@ -59,11 +59,6 @@ class PKRR:
 
         self.K = None
         self.K_reg = None
-        self.mu_I = None
-        # self.I_k = np.eye(rank)
-        # self.C = self.I_k
-        # self.N = None
-        # self.U = None
 
         # For precnditioner
         self.Preconditioner = None  # M: Matrix
@@ -161,16 +156,14 @@ class PKRR:
 
             # Paper: Robust, randomized preconditioning for kernel ridge regression
             # Perform Economy Size SVD
-            # U, D, Vt = sp.linalg.svd(F, full_matrices=False)
-            # mu = self.mu
-            # N, d = U.shape
-            # I = np.eye(N)
-            # i = np.eye(d)
-            # inv = np.linalg.inv(D**2*i+self.mu*i)
-            # self.Preconditioner = U@(inv-i/mu)@U.T+I/mu
+            U, D, Vt = sp.linalg.svd(F, full_matrices=False)
+            mu = copy(self.mu)
+            B = diag_inv(D**2+mu)
+            P_rpc_inv = U@B@U.T+I/mu
+            self.Preconditioner = P_rpc_inv
 
             # Woodbury Identity
-            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
+            # self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
 
         ###########################
         elif self.prec == "nystrom":
@@ -178,12 +171,15 @@ class PKRR:
             # setup Nyström decomposition
             U, D = nystrom(self.K, self.rank)
             mu = copy(self.mu)
+
+            # Paper: RANDOMIZED NYSTROM PRECONDITIONING
             B = diag_inv(D+mu)
             lambda_l = D[-1, -1]  # the largest eig in diagonal matrix
             # P_nys = U@(D+mu)@U.T/(lambda_l+mu)+I-U@U.T
             P_nys_inv = (lambda_l+mu)*U@B@U.T+I-U@U.T
             self.Preconditioner = P_nys_inv
 
+            # Woodbury Identity
             # self.Preconditioner = WB_Identity(self.mu*I, U, U.T, self.rank)
 
         ######################
