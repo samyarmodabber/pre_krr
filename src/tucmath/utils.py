@@ -1,3 +1,4 @@
+import scipy.linalg as la
 from scipy.sparse.linalg import cg
 import numpy as np
 
@@ -35,34 +36,70 @@ def WB_Identity(A, U, V, k):
     return np.diag(A_inv_diag) - (A_inv_diag.reshape(-1, 1) * U @ B_inv @ V * A_inv_diag)
 
 
-
-def cg_iterations(A, b, M, tol=1e-3):
+def CG(A, b, P_inv=None, matvec=None, tol=1e-5, x0=None, max_iter=None):
     """
-    Return the number of CG iterations for solving the system: K @ alpha = Y.
-
-    Parameters
-    ----------
-    A : ndarray
-        The kernel matrix.
-    b : ndarray
-        The vector on the right-hand side of the linear equation to be solved.
-
-    Returns
-    -------
-    solution : float
-        Solution of Ax=b.
-    residuals : ndarray
-        List of residuals at each iteration.
+    Conjugate Gradient Method for solving Ax = b
+    :param A: matrix
+    :param b: vector
+    :param tol: tolerance (default: 1e-5)
+    :param x0: initial guess (default: Zero vector)
+    :param max_iter: Maximum number of iterations (default: Dimension of A)
+    :param P_inv: The inverse of Preconditioner (default: None for CG)
+    :param matvec: Function to perform matrix-vector multiplication (default: None)
+    :return: x, residuals
     """
-    # Initialize counter to get the number of iterations needed in the CG algorithm
+
+    N = len(b)
     residuals = []
+    dot = np.dot
 
-    def callback(x): return residuals.append(
-        np.linalg.norm(A @ x - b) / np.linalg.norm(b))
+    if max_iter is None:
+        max_iter = N
 
-    alpha, info = cg(A, b, M=M, tol=tol, callback=callback)
+    if matvec is None:
+        def matvec(M, u):
+            return M @ u
 
-    return alpha, np.array(residuals)
+    x = np.zeros(N) if x0 is None else x0
+    r = b - matvec(A, x)
+    p = r.copy()
+
+    if P_inv is not None:
+        z = P_inv @ r
+        p = z.copy()
+    else:
+        z = r
+
+    i = 0
+    while i < max_iter and la.norm(r) > tol:
+        residuals.append(np.linalg.norm(r))
+
+        if la.norm(r) < tol:
+            break
+
+        v = matvec(A, p)
+
+        if P_inv is None:
+            alpha = dot(r, r) / dot(p, v)
+        else:
+            alpha = dot(r, z) / dot(p, v)
+
+        x = x + alpha * p
+        r_new = r - alpha * v
+
+        if P_inv is None:
+            beta = dot(r_new, r_new) / dot(r, r)
+        else:
+            z_new = P_inv @ r_new
+            beta = dot(z_new, r_new) / dot(z, r)
+            z = z_new
+
+        p = z + beta * p if P_inv is not None else r_new + beta * p
+        r = r_new
+        i += 1
+
+    return x, np.array(residuals)
+
 
 
 def kernel(my_kernel, A=None, b=None, gamma=1.):

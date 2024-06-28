@@ -3,7 +3,7 @@ import pandas as pd
 import random
 import time
 import scipy as sp
-from utils import cg_iterations, WB_Identity, kernel, diag_inv
+from utils import CG, WB_Identity, kernel, diag_inv
 from sklearn.metrics.pairwise import rbf_kernel
 from low_rank_methods import rpcholesky, greedy, nystrom, rff
 from scipy.sparse.linalg import cg
@@ -186,8 +186,8 @@ class PKRR:
         # preconditioning with random fourier features
         elif self.prec == "rff":
             # RANDOM FOURIER FEATURES APPROACH
-            F, W, b = rff(self.X_train, self.rank, self.gamma)
-            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
+            Z, W, b = rff(self.X_train, self.rank, self.gamma)
+            self.Preconditioner = WB_Identity(self.mu*I, Z, Z.T, self.rank)
 
         ######################
         # without preconditioning - vanilla CG method
@@ -203,17 +203,13 @@ class PKRR:
 
         A = copy(self.K_reg)
         b = copy(y_train)
-        M = copy(self.Preconditioner)
+        P_inv = copy(self.Preconditioner)
         tol = copy(self.tolerence)
 
-        def callback(x): return residuals.append(
-            np.linalg.norm(A @ x - b) / np.linalg.norm(b))
-
-        solution, info = cg(A, b, M=M, tol=tol,
-                            callback=callback, maxiter=maxiter)
+        solution, residuals = CG(A, b, P_inv=P_inv, tol=tol, max_iter=maxiter)
 
         self.solution = solution
-        self.residuals = np.array(residuals)
+        self.residuals = residuals
 
         method = "without precondition" if self.prec == None else self.prec
         self.report = f"Training is done in {len(residuals)} iteration with CG-method. Precondition: {method}"

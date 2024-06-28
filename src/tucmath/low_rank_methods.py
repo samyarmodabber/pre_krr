@@ -104,21 +104,18 @@ def nystrom(K, rank):
     return U, Lamda
 
 
-def rffT(X, rank, sigma):
-    """Return random Fourier features based on data X, as well as random variables W and b.
+def rff(X, D, sigma):
+    """Return random Fourier features based on data X, as well as random
+    variables W and b.
+    https://github.com/NMADALI97/Nystrom_Method_vs_Random_Fourier_Features/blob/master/RFF.py
     """
     N, d = X.shape
-    W = np.random.normal(loc=0, scale=1, size=(rank, d))
-    b = np.random.uniform(0, 2*np.pi, size=rank)
+    W = np.sqrt(2*sigma)*np.random.normal(size=(D, d))
+    b = 2*np.pi*np.random.rand(D)
+    Z = np.sqrt(2/D)*np.cos((X.dot(W.T) + b[np.newaxis, :]))
+    return Z, W, b
 
-    B = np.repeat(b[:, np.newaxis], N, axis=1)
-    norm = 1. / np.sqrt(rank)
-    Z = norm * np.sqrt(2) * np.cos(sigma * W @ X.T + B)
-
-    return Z.T, W.T, b
-
-
-def rff(X, rank, gamma):
+def rffP(X, rank, gamma):
     """
     Random Fourier Features (RFF) approximation for RBF kernel.
 
