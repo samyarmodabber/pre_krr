@@ -1,9 +1,5 @@
 import numpy as np
-import pandas as pd
-import random
-import time
-import scipy as sp
-from utils import CG, WB_Identity, kernel, diag_inv
+from utils import CG
 from sklearn.metrics.pairwise import rbf_kernel
 from low_rank_methods import rpcholesky, greedy, nystrom, rff
 from scipy.sparse.linalg import cg
@@ -60,9 +56,6 @@ class PKRR:
         self.K = None
         self.K_reg = None
 
-        # For precnditioner
-        self.Preconditioner = None  # M: Matrix
-
         # For CG method
         self.solution = None
         self.residuals = None
@@ -76,17 +69,6 @@ class PKRR:
     ############################################################################
 
     def kernel_matrix(self):
-        """
-        Set up kernel matrix.
-
-        Parameters
-        ----------
-        X_train : ndarray : The train data.
-
-        Returns
-        -------
-        K : ndarray : kernel matrix.
-        """
         # Setup Kernel matrix
         if self.kernel == "gaussian":
             # K(x, y) = exp(-gamma ||x-y||^2)
@@ -95,46 +77,18 @@ class PKRR:
 
     ############################################################################
 
-    def matvec(self, A, p):
-        """
-        Approximate matrix-vector product A*p
-
-        Parameters
-        ----------
-        A : object
-            The adjacency matrix object.
-        p : ndarray : The vector, whose product A*p with the matrix A shall be approximated.
-
-        Returns
-        -------
-        Ap : ndarray : The approximated matrix-vector product A*p.
-        """
-        return A@p
+    def matvec(self, x):
+        return self.K_reg@x
 
     ##############################################################################
 
     def fit(self, X_train, y_train, maxiter=None):
-        """
-        Perform the KRR for training the SVM on the train data.
-
-        Parameters
-        ----------
-        X_train : ndarray :            The train data.
-        y_train : ndarray :            The corresponding target vector.
-        prec : str
-            The preconditioner that shall be used for the IPM.
-        max_iter : int
-            The maximum number of interior point iterations.
-
-        Returns
-        -------
-        alpha_fast : ndarray :            The learned classifier parameter.
-        GMRESiter_fast : list
-            Number of GMRES iterations within the interior points iterations.
-        """
         self.X_train = X_train
         N, d = X_train.shape
         I = np.eye(N)
+        I_k = np.eye(self.rank)
+        if maxiter is None:
+            maxiter = N
 
         # Find Kernel and Regularize kernel: K+mu*I
         self.K = self.kernel_matrix()
@@ -145,54 +99,27 @@ class PKRR:
         #####################
         if self.prec == "greedy":
             # GREEDY-BASED PIVOTED CHOLESKY APPROACH
-            F, S, rows = greedy(self.K, self.rank)
-            self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
+            U, S, rows = greedy(self.K, self.rank)
 
         ########################
         elif self.prec == "rpc":
             # RANDOMIZED PIVOTED CHOLESKY APPROACH:
-            # Factor matrix
-            F, S, rows = rpcholesky(self.K, self.rank)
-
-            # Paper: Robust, randomized preconditioning for kernel ridge regression
-            # Perform Economy Size SVD
-            U, D, Vt = sp.linalg.svd(F, full_matrices=False)
-            mu = copy(self.mu)
-            B = diag_inv(D**2+mu)
-            P_rpc_inv = U@B@U.T+I/mu
-            self.Preconditioner = P_rpc_inv
-
-            # Woodbury Identity
-            # self.Preconditioner = WB_Identity(self.mu*I, F, F.T, self.rank)
+            U, S, rows = rpcholesky(self.K, self.rank)
 
         ###########################
         elif self.prec == "nystrom":
             # Nyström APPROACH
-            # setup Nyström decomposition
             U, D = nystrom(self.K, self.rank)
-            mu = copy(self.mu)
-
-            # Paper: RANDOMIZED NYSTROM PRECONDITIONING
-            B = diag_inv(D+mu)
-            lambda_l = D[-1, -1]  # the largest eig in diagonal matrix
-            # P_nys = U@(D+mu)@U.T/(lambda_l+mu)+I-U@U.T
-            P_nys_inv = (lambda_l+mu)*U@B@U.T+I-U@U.T
-            self.Preconditioner = P_nys_inv
-
-            # Woodbury Identity
-            # self.Preconditioner = WB_Identity(self.mu*I, U, U.T, self.rank)
 
         ######################
         # preconditioning with random fourier features
         elif self.prec == "rff":
             # RANDOM FOURIER FEATURES APPROACH
-            Z, W, b = rff(self.X_train, self.rank, self.gamma)
-            self.Preconditioner = WB_Identity(self.mu*I, Z, Z.T, self.rank)
+            U, W, b = rff(self.X_train, rank=self.rank)
+        
+        elif self.prec is None:
+            pass
 
-        ######################
-        # without preconditioning - vanilla CG method
-        elif self.prec == None:
-            self.Preconditioner = None
         ######################
         # Not in methods for wrong typing
         else:
@@ -203,11 +130,17 @@ class PKRR:
 
         A = copy(self.K_reg)
         b = copy(y_train)
-        P_inv = copy(self.Preconditioner)
         tol = copy(self.tolerence)
 
-        solution, residuals = CG(A, b, P_inv=P_inv, tol=tol, max_iter=maxiter)
+        if self.prec is None:
+            # without preconditioning - Vanilla CG method
+            def precon(x): return x
+        else:
+            # Preconditioning
+            def precon(x):
+                return x-U@np.linalg.solve(I_k+U.T@U, U.T@x)
 
+        solution, residuals = CG(self.matvec, precon, b,tol=tol, max_iter=maxiter)
         self.solution = solution
         self.residuals = residuals
 
@@ -215,21 +148,3 @@ class PKRR:
         self.report = f"Training is done in {len(residuals)} iteration with CG-method. Precondition: {method}"
 
     ##############################################################################
-
-    def predict(self, x):
-        """
-        Predict class affiliations for the test data.
-
-        Parameters
-        ----------
-        X_test : ndarray : The test data.
-
-        Returns
-        -------
-        yhat : ndarray : The predicted class affiliations for the test data.
-        """
-        MM = kernel(rbf_kernel, self.X_train, x, gamma=self.gamma)
-        predict0 = self.solution @ MM
-
-        predict = np.sign(predict0)
-        return predict

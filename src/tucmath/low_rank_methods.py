@@ -67,7 +67,7 @@ def uniform(A, rank):
     return core, rows, sample
 
 
-def nystromT(K, rank):
+def nystrom(K, rank):
     N = K.shape[0]
     G = np.random.randn(N, rank)
     Y = K@G  # matvec
@@ -86,59 +86,20 @@ def nystromT(K, rank):
 
     return U, D
 
-
-def nystrom(K, rank):
-    N = K.shape[0]
-    Omega = np.random.randn(N, rank)
-    Y = K@Omega  #matvec
-    eps = np.finfo(float).eps
-    shift = np.linalg.norm(Y, "fro")*eps
-    Y_shift = Y+shift*Omega
-    C = np.linalg.cholesky(Omega.T@Y_shift)
-    B = Y_shift @ np.linalg.inv(C)
-
-    U, D, VT = np.linalg.svd(B, full_matrices=False)
-    Sigma = np.diag(D)
-    Lamda = np.maximum(0, Sigma@Sigma-shift*np.eye(rank))
-
-    return U, Lamda
-
-
-def rff(X, D, sigma):
+def rff(X_train, gamma=None, rank=30, seed=42):
     """Return random Fourier features based on data X, as well as random
     variables W and b.
     https://github.com/NMADALI97/Nystrom_Method_vs_Random_Fourier_Features/blob/master/RFF.py
     """
-    N, d = X.shape
-    W = np.sqrt(2*sigma)*np.random.normal(size=(D, d))
-    b = 2*np.pi*np.random.rand(D)
-    Z = np.sqrt(2/D)*np.cos((X.dot(W.T) + b[np.newaxis, :]))
-    return Z, W, b
+    rng = np.random.RandomState(seed)
+    n_samples, n_features = X_train.shape
+    if gamma is None:
+        gamma = 1. / n_features
 
-def rffP(X, rank, gamma):
-    """
-    Random Fourier Features (RFF) approximation for RBF kernel.
+    W = np.random.normal(0, np.sqrt(2*gamma), (n_features, rank))
+    b = np.random.uniform(0, 2*np.pi, (1, rank))
 
-    Parameters:
-    X (np.ndarray): Input data matrix of shape (n_samples, n_features).
-    rank (int): Number of random Fourier features.
-    gamma (float): Parameter for the RBF kernel.
-
-    Returns:
-    np.ndarray: Approximated feature map of shape (n_samples, D).
-    np.ndarray: W.
-    np.ndarray: b.
-    """
-    N, d = X.shape
-
-    # Generate random weights from a normal distribution
-    W = np.random.normal(0, np.sqrt(2 * gamma), (d, rank))
-
-    # Generate random bias from a uniform distribution
-    b = np.random.uniform(0, 2 * np.pi, rank)
-
-    # Compute the random Fourier features
-    Z = np.sqrt(2 / rank) * np.cos(X.dot(W) + b)
+    Z = np.sqrt(2/n_features) * np.cos(np.dot(X_train, W) + b)
 
     return Z, W, b
 
