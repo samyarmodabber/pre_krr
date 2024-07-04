@@ -1,6 +1,9 @@
+from scipy.stats import cauchy, laplace
 from warnings import warn
 import numpy as np
 from scipy import linalg as la
+from scipy.linalg import cholesky
+from scipy.sparse import csc_matrix
 
 
 def rpcholesky(K, rank, block=1):
@@ -59,13 +62,30 @@ def greedy(K, r, randomized_tiebreaking=False, block=1):
         return block_cholesky_helper(K, r, block, 'greedy')
 
 
-def uniform(A, rank):
+def uniform_old(A, rank):
     n = A.shape[0]
     sample = np.random.choice(range(n), rank, False)
     rows = A[sample, :]
     core = rows[:, sample]
     return core, rows, sample
 
+
+def uniform(A, k):
+    N = A.shape[0]
+
+    S = np.unique(np.random.choice(N, k, replace=False))
+
+    if isinstance(A, np.ndarray):
+        AS = A[:, S]
+    else:
+        AS = A(S)
+
+    nu = np.finfo(float).eps * np.linalg.norm(AS, 'fro')  # Compute shift
+    Y = AS + nu * csc_matrix((np.ones(k), (S, range(k))),shape=AS.shape).toarray()
+    A_SS = Y[S, :]
+    F = np.dot(Y, np.linalg.inv(cholesky(A_SS, lower=True)))
+
+    return F, AS, S
 
 def nystrom(K, rank):
     N = K.shape[0]
@@ -86,20 +106,39 @@ def nystrom(K, rank):
 
     return U, D
 
+
+def rffN(X, rank, metric="rbf", gamma=1.):
+    
+    """ Generates MonteCarlo random samples """
+    d = X.shape[1]
+    # Generate rank iid samples from p(w)
+    if metric == "rbf":
+        w = np.sqrt(2*gamma)*np.random.normal(size=(d, rank))
+    elif metric == "laplace":
+        w = cauchy.rvs(scale= gamma, size=(rank, d))
+
+    # Generate rank iid samples from Uniform(0,2*pi)
+    u = 2*np.pi*np.random.rand((1,rank))
+    Z = np.sqrt(2/rank)*np.cos((X.dot(w) + u[np.newaxis, :]))
+
+    return Z, w, u
+
+
 def rff(X_train, gamma=None, rank=30, seed=42):
     """Return random Fourier features based on data X, as well as random
     variables W and b.
     https://github.com/NMADALI97/Nystrom_Method_vs_Random_Fourier_Features/blob/master/RFF.py
     """
     rng = np.random.RandomState(seed)
-    n_samples, n_features = X_train.shape
+    n_samples, d = X_train.shape
     if gamma is None:
-        gamma = 1. / n_features
+        gamma = 1. / d
+    # W = np.random.normal(0,np.sqrt(2*gamma), size=(rank, d))
+    W = np.sqrt(2/((np.sqrt(1/(2*gamma)))**2))*np.random.normal(size=(rank, d))
+    b = 2*np.pi*np.random.rand(rank)
+    
+    Z= np.sqrt(2/rank) * np.cos(((X_train).dot(W.T) + b[np.newaxis, :]))
 
-    W = np.random.normal(0, np.sqrt(2*gamma), (n_features, rank))
-    b = np.random.uniform(0, 2*np.pi, (1, rank))
-
-    Z = np.sqrt(2/n_features) * np.cos(np.dot(X_train, W) + b)
 
     return Z, W, b
 

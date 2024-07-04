@@ -1,7 +1,7 @@
 import numpy as np
 from utils import CG
 from sklearn.metrics.pairwise import rbf_kernel
-from low_rank_methods import rpcholesky, greedy, nystrom, rff
+from low_rank_methods import rpcholesky, greedy, nystrom, uniform, rff
 from scipy.sparse.linalg import cg
 from copy import copy
 
@@ -44,7 +44,7 @@ class PKRR:
     >>> f"Correct: {sum(y_test==y_predict_1 )} , Incorrect: {sum(y_test!=y_predict_1)}")
     """
 
-    def __init__(self, mu=0.1, kernel="gaussian", gamma=1., prec=None, rank=200, tolerence=1e-3):
+    def __init__(self, mu=0.1, kernel="gaussian", gamma=1., prec=None, rank=200, tolerence=1e-5):
 
         self.mu = mu
         self.kernel = kernel
@@ -94,38 +94,6 @@ class PKRR:
         self.K = self.kernel_matrix()
         self.K_reg = self.K + self.mu*I
 
-        #####################
-        # PRECONDITIONING
-        #####################
-        if self.prec == "greedy":
-            # GREEDY-BASED PIVOTED CHOLESKY APPROACH
-            U, S, rows = greedy(self.K, self.rank)
-
-        ########################
-        elif self.prec == "rpc":
-            # RANDOMIZED PIVOTED CHOLESKY APPROACH:
-            U, S, rows = rpcholesky(self.K, self.rank)
-
-        ###########################
-        elif self.prec == "nystrom":
-            # Nyström APPROACH
-            U, D = nystrom(self.K, self.rank)
-
-        ######################
-        # preconditioning with random fourier features
-        elif self.prec == "rff":
-            # RANDOM FOURIER FEATURES APPROACH
-            U, W, b = rff(self.X_train, rank=self.rank)
-        
-        elif self.prec is None:
-            pass
-
-        ######################
-        # Not in methods for wrong typing
-        else:
-            raise ValueError(
-                'Select precondition method from "rpc","greedy","rff", or "nystrom"')
-
         residuals = []
 
         A = copy(self.K_reg)
@@ -136,10 +104,42 @@ class PKRR:
             # without preconditioning - Vanilla CG method
             def precon(x): return x
         else:
-            # Preconditioning
-            def precon(x):
-                return x-U@np.linalg.solve(I_k+U.T@U, U.T@x)
+            # PRECONDITIONING
+            #####################
+            if self.prec == "greedy":
+                # GREEDY-BASED PIVOTED CHOLESKY APPROACH
+                U, S, rows = greedy(self.K, self.rank)
 
+            elif self.prec == "uni":
+                # GREEDY-BASED PIVOTED CHOLESKY APPROACH
+                U, AS, S = uniform(self.K, self.rank)
+
+            ########################
+            elif self.prec == "rpc":
+                # RANDOMIZED PIVOTED CHOLESKY APPROACH:
+                U, S, rows = rpcholesky(self.K, self.rank)
+
+            ###########################
+            elif self.prec == "nystrom":
+                # Nyström APPROACH
+                U, D = nystrom(self.K, self.rank)
+
+            ######################
+            # preconditioning with random fourier features
+            elif self.prec == "rff":
+                # RANDOM FOURIER FEATURES APPROACH
+                U, W, bb = rff(self.X_train, rank=self.rank, gamma=self.gamma)
+                # Not in methods for wrong typing
+            else:
+                raise ValueError(
+                    f'{self.prec} is a mistake method. Select precondition method from "rpc", "uni", "greedy","rff", or "nystrom"')
+
+
+                # print((I_k+U.T@U).shape)
+            def precon(x):
+                mu=self.mu
+                return x/mu-(1./mu**2)*U@np.linalg.solve(I_k+(1./mu)*U.T@U, U.T@x)
+        
         solution, residuals = CG(self.matvec, precon, b,tol=tol, max_iter=maxiter)
         self.solution = solution
         self.residuals = residuals
