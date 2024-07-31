@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 # SUSY Dataset
 
 
-def susy(num=0):
+def susy(num=0, seed=123):
     """
     Read the SUSY Dataset and prepare it for usage.
 
@@ -56,6 +56,7 @@ def susy(num=0):
             idx_background.append(i)
         else:
             idx_signal.append(i)
+    random.seed(seed)
 
     if num != 0:
         r1 = random.sample(idx_signal, num)
@@ -80,7 +81,7 @@ def susy(num=0):
 # HIGGS Dataset
 
 
-def higgs(num=0):
+def higgs(num=0, seed=123):
     """
     Read the HIGGS Dataset and prepare it for usage.
 
@@ -128,6 +129,7 @@ def higgs(num=0):
         else:
             idx_higgs.append(i)
 
+    random.seed(seed)
     if num != 0:
         r1 = random.sample(idx_higgs, num)
         r2 = random.sample(idx_else, num)
@@ -146,7 +148,7 @@ def higgs(num=0):
 # cod-rna Dataset
 
 
-def cod_rna(num=0):
+def cod_rna(num=0, seed=123):
     """
     Read the cod-rna dataset and prepare it for usage.
 
@@ -193,6 +195,7 @@ def cod_rna(num=0):
         else:
             idx_neg_train.append(i)
 
+    random.seed(seed)
     if num != 0:
         r1_train = random.sample(idx_pos_train, num_cod)
         r2_train = random.sample(idx_neg_train, num_cod)
@@ -222,5 +225,10 @@ def cod_rna(num=0):
 
         X_test = X_test[r_samples_test, :]
         y_test = y_test[r_samples_test]
+        
+    X_train = np.asarray(X_train)
+    X_test = np.asarray(X_test)
+    y_train = np.asarray(y_train)
+    y_test = np.asarray(y_test)
 
     return X_train, X_test, y_train, y_test

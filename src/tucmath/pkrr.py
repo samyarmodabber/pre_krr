@@ -2,6 +2,7 @@ import numpy as np
 from utils import CG
 from sklearn.metrics.pairwise import rbf_kernel
 from low_rank_methods import rpcholesky, greedy, nystrom, uniform, rff
+# from low_rank_methods import rpcholesky, greedy, nystrom, uniform, rff
 from scipy.sparse.linalg import cg
 from copy import copy
 
@@ -107,35 +108,30 @@ class PKRR:
             # PRECONDITIONING
             #####################
             if self.prec == "greedy":
-                # GREEDY-BASED PIVOTED CHOLESKY APPROACH
-                U, S, rows = greedy(self.K, self.rank)
+                U = greedy(self.K, self.rank)[0]
 
-            elif self.prec == "uni":
-                # GREEDY-BASED PIVOTED CHOLESKY APPROACH
-                U, AS, S = uniform(self.K, self.rank)
+            elif self.prec == "uniform":
+                U = uniform(self.K, self.rank)[0]
 
             ########################
             elif self.prec == "rpc":
-                # RANDOMIZED PIVOTED CHOLESKY APPROACH:
-                U, S, rows = rpcholesky(self.K, self.rank)
+                U = rpcholesky(self.K, self.rank)[0]
 
             ###########################
             elif self.prec == "nystrom":
-                # Nyström APPROACH
-                U, D = nystrom(self.K, self.rank)
+                U= nystrom(self.K, self.rank)[0]
 
             ######################
-            # preconditioning with random fourier features
             elif self.prec == "rff":
-                # RANDOM FOURIER FEATURES APPROACH
-                U, W, bb = rff(self.X_train, rank=self.rank, gamma=self.gamma)
-                # Not in methods for wrong typing
+                U = rff(self.X_train, gamma=self.gamma, rank=self.rank)[0]
+
+            ######################
             else:
+                # Not in methods for wrong typing
                 raise ValueError(
-                    f'{self.prec} is a mistake method. Select precondition method from "rpc", "uni", "greedy","rff", or "nystrom"')
+                    f'{self.prec} is a mistake method. Select precondition method from "rpc", "uniform", "greedy","rff", or "nystrom"')
 
 
-                # print((I_k+U.T@U).shape)
             def precon(x):
                 mu=self.mu
                 return x/mu-(1./mu**2)*U@np.linalg.solve(I_k+(1./mu)*U.T@U, U.T@x)
